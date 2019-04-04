@@ -2,6 +2,7 @@
 .cache
 .idea
 .vscode
+node_modules
 coverage
 test_pdfs
 npm-debug.log
