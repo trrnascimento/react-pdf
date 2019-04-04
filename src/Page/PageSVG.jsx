@@ -1,19 +1,11 @@
-import React, { PureComponent } from 'react';
+import React, { Component } from 'react';
 import PropTypes from 'prop-types';
-import pdfjs from 'pdfjs-dist';
 
-import PageContext from '../PageContext';
-
-import {
-  callIfDefined,
-  errorOnDev,
-  isCancelException,
-  makePageCallback,
-} from '../shared/utils';
+import { callIfDefined, makePageCallback } from '../shared/utils';
 
 import { isPage, isRotate } from '../shared/propTypes';
 
-export class PageSVGInternal extends PureComponent {
+export default class PageSVG extends Component {
   state = {
     svg: null,
   }
@@ -28,10 +20,10 @@ export class PageSVGInternal extends PureComponent {
   onRenderSuccess = () => {
     this.renderer = null;
 
-    const { onRenderSuccess, page, scale } = this.props;
+    const { page, scale } = this.context;
 
     callIfDefined(
-      onRenderSuccess,
+      this.context.onRenderSuccess,
       makePageCallback(page, scale),
     );
   }
@@ -40,37 +32,35 @@ export class PageSVGInternal extends PureComponent {
    * Called when a page fails to render.
    */
   onRenderError = (error) => {
-    if (isCancelException(error)) {
+    if (error.name === 'RenderingCancelledException') {
       return;
     }
 
-    errorOnDev(error);
-
-    const { onRenderError } = this.props;
-
     callIfDefined(
-      onRenderError,
+      this.context.onRenderError,
       error,
     );
   }
 
   get viewport() {
-    const { page, rotate, scale } = this.props;
+    const { page, rotate, scale } = this.context;
 
-    return page.getViewport({ scale, rotation: rotate });
+    return page.getViewport(scale, rotate);
   }
 
   renderSVG = () => {
-    const { page } = this.props;
+    const { page } = this.context;
 
     this.renderer = page.getOperatorList();
 
     return this.renderer
       .then((operatorList) => {
-        const svgGfx = new pdfjs.SVGGraphics(page.commonObjs, page.objs);
+        const svgGfx = new PDFJS.SVGGraphics(page.commonObjs, page.objs);
         this.renderer = svgGfx.getSVG(operatorList, this.viewport)
           .then((svg) => {
-            this.setState({ svg }, this.onRenderSuccess);
+            svg.style.maxWidth = '100%';
+            svg.style.height = 'auto';
+            this.setState({ svg }, () => this.onRenderSuccess());
           })
           .catch(this.onRenderError);
       })
@@ -84,29 +74,23 @@ export class PageSVGInternal extends PureComponent {
       return;
     }
 
-    // Append SVG element to the main container, if this hasn't been done already
-    if (!element.firstElementChild) {
+    const renderedPage = element.firstElementChild;
+    if (renderedPage) {
+      const { width, height } = this.viewport;
+      renderedPage.setAttribute('width', width);
+      renderedPage.setAttribute('height', height);
+    } else {
       element.appendChild(svg);
     }
-
-    const { width, height } = this.viewport;
-    svg.setAttribute('width', width);
-    svg.setAttribute('height', height);
   }
 
   render() {
-    const { width, height } = this.viewport;
-
     return (
       <div
         className="react-pdf__Page__svg"
         style={{
           display: 'block',
           backgroundColor: 'white',
-          overflow: 'hidden',
-          width,
-          height,
-          userSelect: 'none',
         }}
         // Note: This cannot be shortened, as we need this function to be called with each render.
         ref={ref => this.drawPageOnContainer(ref)}
@@ -115,18 +99,10 @@ export class PageSVGInternal extends PureComponent {
   }
 }
 
-PageSVGInternal.propTypes = {
+PageSVG.contextTypes = {
   onRenderError: PropTypes.func,
   onRenderSuccess: PropTypes.func,
   page: isPage.isRequired,
   rotate: isRotate,
   scale: PropTypes.number,
 };
-
-const PageSVG = props => (
-  <PageContext.Consumer>
-    {context => <PageSVGInternal {...context} {...props} />}
-  </PageContext.Consumer>
-);
-
-export default PageSVG;

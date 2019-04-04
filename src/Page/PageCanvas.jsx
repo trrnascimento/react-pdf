@@ -1,47 +1,17 @@
-import React, { PureComponent } from 'react';
+import React, { Component } from 'react';
 import PropTypes from 'prop-types';
-
-import PageContext from '../PageContext';
 
 import {
   callIfDefined,
   errorOnDev,
   getPixelRatio,
-  isCancelException,
   makePageCallback,
 } from '../shared/utils';
 
 import { isPage, isRotate } from '../shared/propTypes';
 
-export class PageCanvasInternal extends PureComponent {
-  componentDidMount() {
-    this.drawPageOnCanvas();
-  }
-
-  componentDidUpdate(prevProps) {
-    const { page, renderInteractiveForms } = this.props;
-    if (renderInteractiveForms !== prevProps.renderInteractiveForms) {
-      // Ensures the canvas will be re-rendered from scratch. Otherwise all form data will stay.
-      page.cleanup();
-      this.drawPageOnCanvas();
-    }
-  }
-
+export default class PageCanvas extends Component {
   componentWillUnmount() {
-    this.cancelRenderingTask();
-
-    /**
-     * Zeroing the width and height cause most browsers to release graphics
-     * resources immediately, which can greatly reduce memory consumption.
-     */
-    if (this.canvasLayer) {
-      this.canvasLayer.width = 0;
-      this.canvasLayer.height = 0;
-      this.canvasLayer = null;
-    }
-  }
-
-  cancelRenderingTask() {
     /* eslint-disable no-underscore-dangle */
     if (this.renderer && this.renderer._internalRenderTask.running) {
       this.renderer._internalRenderTask.cancel();
@@ -55,10 +25,10 @@ export class PageCanvasInternal extends PureComponent {
   onRenderSuccess = () => {
     this.renderer = null;
 
-    const { onRenderSuccess, page, scale } = this.props;
+    const { page, scale } = this.context;
 
     callIfDefined(
-      onRenderSuccess,
+      this.context.onRenderSuccess,
       makePageCallback(page, scale),
     );
   }
@@ -67,43 +37,43 @@ export class PageCanvasInternal extends PureComponent {
    * Called when a page fails to render.
    */
   onRenderError = (error) => {
-    if (isCancelException(error)) {
+    if (
+      error.name === 'RenderingCancelledException' ||
+      error.name === 'PromiseCancelledException'
+    ) {
       return;
     }
 
-    errorOnDev(error);
-
-    const { onRenderError } = this.props;
+    errorOnDev(error.message, error);
 
     callIfDefined(
-      onRenderError,
+      this.context.onRenderError,
       error,
     );
   }
 
   get renderViewport() {
-    const { page, rotate, scale } = this.props;
+    const { page, rotate, scale } = this.context;
 
     const pixelRatio = getPixelRatio();
 
-    return page.getViewport({ scale: scale * pixelRatio, rotation: rotate });
+    return page.getViewport(scale * pixelRatio, rotate);
   }
 
   get viewport() {
-    const { page, rotate, scale } = this.props;
+    const { page, rotate, scale } = this.context;
 
-    return page.getViewport({ scale, rotation: rotate });
+    return page.getViewport(scale, rotate);
   }
 
-  drawPageOnCanvas = () => {
-    const { canvasLayer: canvas } = this;
-
+  drawPageOnCanvas = (canvas) => {
     if (!canvas) {
       return null;
     }
 
+    const { page } = this.context;
+
     const { renderViewport, viewport } = this;
-    const { page, renderInteractiveForms } = this.props;
 
     canvas.width = renderViewport.width;
     canvas.height = renderViewport.height;
@@ -116,15 +86,18 @@ export class PageCanvasInternal extends PureComponent {
         return canvas.getContext('2d');
       },
       viewport: renderViewport,
-      renderInteractiveForms,
     };
 
     // If another render is in progress, let's cancel it
-    this.cancelRenderingTask();
+    /* eslint-disable no-underscore-dangle */
+    if (this.renderer && this.renderer._internalRenderTask.running) {
+      this.renderer._internalRenderTask.cancel();
+    }
+    /* eslint-enable no-underscore-dangle */
 
     this.renderer = page.render(renderContext);
 
-    return this.renderer.promise
+    return this.renderer
       .then(this.onRenderSuccess)
       .catch(this.onRenderError);
   }
@@ -137,25 +110,16 @@ export class PageCanvasInternal extends PureComponent {
           display: 'block',
           userSelect: 'none',
         }}
-        ref={(ref) => { this.canvasLayer = ref; }}
+        ref={this.drawPageOnCanvas}
       />
     );
   }
 }
 
-PageCanvasInternal.propTypes = {
+PageCanvas.contextTypes = {
   onRenderError: PropTypes.func,
   onRenderSuccess: PropTypes.func,
   page: isPage.isRequired,
-  renderInteractiveForms: PropTypes.bool,
   rotate: isRotate,
   scale: PropTypes.number,
 };
-
-const PageCanvas = props => (
-  <PageContext.Consumer>
-    {context => <PageCanvasInternal {...context} {...props} />}
-  </PageContext.Consumer>
-);
-
-export default PageCanvas;

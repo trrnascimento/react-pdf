@@ -1,8 +1,5 @@
-import React, { PureComponent } from 'react';
+import React, { Component } from 'react';
 import PropTypes from 'prop-types';
-
-import DocumentContext from './DocumentContext';
-import OutlineContext from './OutlineContext';
 
 import Ref from './Ref';
 
@@ -10,9 +7,10 @@ import { callIfDefined, isDefined } from './shared/utils';
 
 import { isPdf } from './shared/propTypes';
 
-export class OutlineItemInternal extends PureComponent {
+export default class OutlineItem extends Component {
   getDestination = async () => {
-    const { item, pdf } = this.props;
+    const { pdf } = this.context;
+    const { item } = this.props;
 
     if (!isDefined(this.destination)) {
       if (typeof item.dest === 'string') {
@@ -26,7 +24,7 @@ export class OutlineItemInternal extends PureComponent {
   }
 
   getPageIndex = async () => {
-    const { pdf } = this.props;
+    const { pdf } = this.context;
 
     if (!isDefined(this.pageIndex)) {
       const destination = await this.getDestination();
@@ -48,15 +46,13 @@ export class OutlineItemInternal extends PureComponent {
   }
 
   onClick = async (event) => {
-    const { onClick } = this.props;
-
     event.preventDefault();
 
     const pageIndex = await this.getPageIndex();
     const pageNumber = await this.getPageNumber();
 
     callIfDefined(
-      onClick,
+      this.context.onClick,
       {
         pageIndex,
         pageNumber,
@@ -65,7 +61,7 @@ export class OutlineItemInternal extends PureComponent {
   }
 
   renderSubitems() {
-    const { item, ...otherProps } = this.props;
+    const { item } = this.props;
 
     if (!item.items || !item.items.length) {
       return null;
@@ -77,14 +73,13 @@ export class OutlineItemInternal extends PureComponent {
       <ul>
         {
           subitems.map((subitem, subitemIndex) => (
-            <OutlineItemInternal
+            <OutlineItem
               key={
-                typeof subitem.destination === 'string'
-                  ? subitem.destination
-                  : subitemIndex
+                typeof subitem.destination === 'string' ?
+                  subitem.destination :
+                  subitemIndex
               }
               item={subitem}
-              {...otherProps}
             />
           ))
         }
@@ -94,13 +89,13 @@ export class OutlineItemInternal extends PureComponent {
 
   render() {
     const { item } = this.props;
+    const { onClick } = this;
 
-    /* eslint-disable jsx-a11y/anchor-is-valid */
     return (
       <li>
         <a
           href="#"
-          onClick={this.onClick}
+          onClick={onClick}
         >
           {item.title}
         </a>
@@ -115,7 +110,12 @@ const isDestination = PropTypes.oneOfType([
   PropTypes.arrayOf(PropTypes.any),
 ]);
 
-OutlineItemInternal.propTypes = {
+OutlineItem.contextTypes = {
+  onClick: PropTypes.func,
+  pdf: isPdf.isRequired,
+};
+
+OutlineItem.propTypes = {
   item: PropTypes.shape({
     title: PropTypes.string,
     destination: isDestination,
@@ -124,20 +124,4 @@ OutlineItemInternal.propTypes = {
       destination: isDestination,
     })),
   }).isRequired,
-  onClick: PropTypes.func,
-  pdf: isPdf.isRequired,
 };
-
-const OutlineItem = props => (
-  <DocumentContext.Consumer>
-    {documentContext => (
-      <OutlineContext.Consumer>
-        {outlineContext => (
-          <OutlineItemInternal {...documentContext} {...outlineContext} {...props} />
-        )}
-      </OutlineContext.Consumer>
-    )}
-  </DocumentContext.Consumer>
-);
-
-export default OutlineItem;

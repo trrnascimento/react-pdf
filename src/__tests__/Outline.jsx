@@ -1,17 +1,16 @@
 import React from 'react';
 import { shallow } from 'enzyme';
+import pdfjs from 'pdfjs-dist';
 
-import { pdfjs } from '../entry.jest';
-
-import { OutlineInternal as Outline } from '../Outline';
+import { Outline } from '../entry.noworker';
 
 import failingPdf from '../../__mocks__/_failing_pdf';
-import {
-  loadPDF, makeAsyncCallback, muteConsole, restoreConsole,
-} from './utils';
+import { loadPDF, makeAsyncCallback, muteConsole, restoreConsole } from './utils';
 
-const pdfFile = loadPDF('./__mocks__/_pdf.pdf');
-const pdfFile2 = loadPDF('./__mocks__/_pdf2.pdf');
+const { PDFJS } = pdfjs;
+
+const { arrayBuffer: fileArrayBuffer } = loadPDF('./__mocks__/_pdf.pdf');
+const { arrayBuffer: fileArrayBuffer2 } = loadPDF('./__mocks__/_pdf2.pdf');
 
 /* eslint-disable comma-dangle */
 
@@ -25,8 +24,8 @@ describe('Outline', () => {
   let desiredLoadedOutline2 = null;
 
   beforeAll(async () => {
-    pdf = await pdfjs.getDocument({ data: pdfFile.arrayBuffer }).promise;
-    pdf2 = await pdfjs.getDocument({ data: pdfFile2.arrayBuffer }).promise;
+    pdf = await PDFJS.getDocument({ data: fileArrayBuffer });
+    pdf2 = await PDFJS.getDocument({ data: fileArrayBuffer2 });
 
     desiredLoadedOutline = await pdf.getOutline();
     desiredLoadedOutline2 = await pdf2.getOutline();
@@ -37,10 +36,12 @@ describe('Outline', () => {
       const { func: onLoadSuccess, promise: onLoadSuccessPromise } = makeAsyncCallback();
 
       shallow(
-        <Outline
-          onLoadSuccess={onLoadSuccess}
-          pdf={pdf}
-        />
+        <Outline onLoadSuccess={onLoadSuccess} />,
+        {
+          context: {
+            pdf,
+          },
+        }
       );
 
       expect.assertions(1);
@@ -53,10 +54,12 @@ describe('Outline', () => {
       muteConsole();
 
       shallow(
-        <Outline
-          onLoadError={onLoadError}
-          pdf={failingPdf}
-        />
+        <Outline onLoadError={onLoadError} />,
+        {
+          context: {
+            pdf: failingPdf,
+          },
+        }
       );
 
       expect.assertions(1);
@@ -65,14 +68,16 @@ describe('Outline', () => {
       restoreConsole();
     });
 
-    it('replaces an outline properly when pdf is changed', async () => {
+    it('replaces an outline properly', async () => {
       const { func: onLoadSuccess, promise: onLoadSuccessPromise } = makeAsyncCallback();
 
       const mountedComponent = shallow(
-        <Outline
-          onLoadSuccess={onLoadSuccess}
-          pdf={pdf}
-        />
+        <Outline onLoadSuccess={onLoadSuccess} />,
+        {
+          context: {
+            pdf,
+          },
+        }
       );
 
       expect.assertions(2);
@@ -80,10 +85,8 @@ describe('Outline', () => {
 
       const { func: onLoadSuccess2, promise: onLoadSuccessPromise2 } = makeAsyncCallback();
 
-      mountedComponent.setProps({
-        onLoadSuccess: onLoadSuccess2,
-        pdf: pdf2,
-      });
+      mountedComponent.setProps({ onLoadSuccess: onLoadSuccess2 });
+      mountedComponent.setContext({ pdf: pdf2 });
 
       // It would have been .toMatchObject if not for the fact _pdf2.pdf has no outline
       await expect(onLoadSuccessPromise2).resolves.toBe(desiredLoadedOutline2);
@@ -99,10 +102,12 @@ describe('Outline', () => {
       const { func: onLoadSuccess, promise: onLoadSuccessPromise } = makeAsyncCallback();
 
       const component = shallow(
-        <Outline
-          onLoadSuccess={onLoadSuccess}
-          pdf={pdf}
-        />
+        <Outline onLoadSuccess={onLoadSuccess} />,
+        {
+          context: {
+            pdf,
+          },
+        }
       );
 
       expect.assertions(1);

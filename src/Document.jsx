@@ -1,18 +1,11 @@
 /**
  * Loads a PDF document. Passes it to all children.
  */
-import React, { PureComponent } from 'react';
+import React, { Component } from 'react';
 import PropTypes from 'prop-types';
-import makeEventProps from 'make-event-props';
 import mergeClassNames from 'merge-class-names';
-import pdfjs, { PDFDataRangeTransport } from 'pdfjs-dist';
-
-import DocumentContext from './DocumentContext';
-
-import Message from './Message';
 
 import LinkService from './LinkService';
-import PasswordResponses from './PasswordResponses';
 
 import {
   callIfDefined,
@@ -23,17 +16,18 @@ import {
   isArrayBuffer,
   isBlob,
   isBrowser,
-  isCancelException,
   isDataURI,
   isFile,
-  loadFromFile,
+  isParamObject,
+  isString,
   makeCancellable,
   warnOnDev,
 } from './shared/utils';
+import { makeEventProps } from './shared/events';
 
-import { eventsProps, isClassName } from './shared/propTypes';
+import { eventsProps, isClassName, isLinkService, isPdf } from './shared/propTypes';
 
-export default class Document extends PureComponent {
+export default class Document extends Component {
   state = {
     pdf: null,
   }
@@ -41,11 +35,10 @@ export default class Document extends PureComponent {
   viewer = {
     scrollPageIntoView: ({ pageNumber }) => {
       // Handling jumping to internal links target
-      const { onItemClick } = this.props;
 
       // First, check if custom handling of onItemClick was provided
-      if (onItemClick) {
-        onItemClick({ pageNumber });
+      if (this.props.onItemClick) {
+        this.props.onItemClick({ pageNumber });
         return;
       }
 
@@ -66,13 +59,17 @@ export default class Document extends PureComponent {
 
   componentDidMount() {
     this.loadDocument();
-    this.setupLinkService();
+
+    this.linkService.setViewer(this.viewer);
   }
 
-  componentDidUpdate(prevProps) {
-    const { file } = this.props;
-    if (file !== prevProps.file) {
-      this.loadDocument();
+  componentWillReceiveProps(nextProps) {
+    if (this.shouldLoadDocument(nextProps)) {
+      if (this.state.pdf !== null) {
+        this.setState({ pdf: null });
+      }
+
+      this.loadDocument(nextProps);
     }
   }
 
@@ -80,182 +77,191 @@ export default class Document extends PureComponent {
     cancelRunningTask(this.runningTask);
   }
 
-  loadDocument = async () => {
-    let source = null;
-    try {
-      source = await this.findDocumentSource();
-      this.onSourceSuccess();
-    } catch (error) {
-      this.onSourceError(error);
-    }
-
-    if (!source) {
-      return;
-    }
-
-    this.setState((prevState) => {
-      if (!prevState.pdf) {
-        return null;
-      }
-
-      return { pdf: null };
-    });
-
-    const { options, onLoadProgress, onPassword } = this.props;
-
-    try {
-      // If another loading is in progress, let's cancel it
-      cancelRunningTask(this.runningTask);
-
-      const loadingTask = pdfjs.getDocument({ ...source, ...options });
-      loadingTask.onPassword = onPassword;
-      if (onLoadProgress) {
-        loadingTask.onProgress = onLoadProgress;
-      }
-      const cancellable = makeCancellable(loadingTask.promise);
-      this.runningTask = cancellable;
-      const pdf = await cancellable.promise;
-
-      this.setState((prevState) => {
-        if (prevState.pdf && prevState.pdf.fingerprint === pdf.fingerprint) {
-          return null;
-        }
-
-        return { pdf };
-      }, this.onLoadSuccess);
-    } catch (error) {
-      this.onLoadError(error);
-    }
-  }
-
-  setupLinkService = () => {
-    this.linkService.setViewer(this.viewer);
-    const documentInstance = this;
-    Object.defineProperty(this.linkService, 'externalLinkTarget', {
-      get() {
-        const { externalLinkTarget } = documentInstance.props;
-        switch (externalLinkTarget) {
-          case '_self': return 1;
-          case '_blank': return 2;
-          case '_parent': return 3;
-          case '_top': return 4;
-          default: return 0;
-        }
-      },
-    });
-  }
-
-  get childContext() {
+  getChildContext() {
     const { linkService, registerPage, unregisterPage } = this;
-    const { renderMode, rotate } = this.props;
-    const { pdf } = this.state;
+    const { rotate } = this.props;
 
     return {
       linkService,
-      pdf,
+      pdf: this.state.pdf,
       registerPage,
-      renderMode,
       rotate,
       unregisterPage,
     };
   }
 
   get eventProps() {
-    // eslint-disable-next-line react/destructuring-assignment
     return makeEventProps(this.props, () => this.state.pdf);
   }
 
   /**
    * Called when a document source is resolved correctly
    */
-  onSourceSuccess = () => {
-    const { onSourceSuccess } = this.props;
-    callIfDefined(onSourceSuccess);
+  onSourceSuccess = (source) => {
+    callIfDefined(this.props.onSourceSuccess);
+
+    if (!PDFJS) {
+      throw new Error('Could not load the document. PDF.js is not loaded.');
+    }
+
+    if (!source) {
+      return null;
+    }
+
+    this.runningTask = makeCancellable(PDFJS.getDocument(source));
+
+    return this.runningTask.promise
+      .then(this.onLoadSuccess)
+      .catch(this.onLoadError);
   }
 
   /**
    * Called when a document source failed to be resolved correctly
    */
   onSourceError = (error) => {
-    if (isCancelException(error)) {
+    if (
+      error.name === 'RenderingCancelledException' ||
+      error.name === 'PromiseCancelledException'
+    ) {
       return;
     }
 
-    errorOnDev(error);
-
-    const { onSourceError } = this.props;
+    errorOnDev(error.message, error);
 
     callIfDefined(
-      onSourceError,
+      this.props.onSourceError,
       error,
     );
+
+    this.setState({ pdf: false });
   }
 
   /**
    * Called when a document is read successfully
    */
-  onLoadSuccess = () => {
-    const { onLoadSuccess } = this.props;
-    const { pdf } = this.state;
+  onLoadSuccess = (pdf) => {
+    this.setState({ pdf }, () => {
+      callIfDefined(
+        this.props.onLoadSuccess,
+        pdf,
+      );
 
-    callIfDefined(
-      onLoadSuccess,
-      pdf,
-    );
-
-    this.pages = new Array(pdf.numPages);
-    this.linkService.setDocument(pdf);
+      this.pages = new Array(pdf.numPages);
+      this.linkService.setDocument(pdf);
+    });
   }
 
   /**
    * Called when a document failed to read successfully
    */
   onLoadError = (error) => {
-    if (isCancelException(error)) {
+    if (
+      error.name === 'RenderingCancelledException' ||
+      error.name === 'PromiseCancelledException'
+    ) {
       return;
     }
 
-    this.setState({ pdf: false });
-
-    errorOnDev(error);
-
-    const { onLoadError } = this.props;
+    errorOnDev(error.message, error);
 
     callIfDefined(
-      onLoadError,
+      this.props.onLoadError,
       error,
     );
+
+    this.setState({ pdf: false });
+  }
+
+  shouldLoadDocument(nextProps) {
+    const { file: nextFile } = nextProps;
+    const { file } = this.props;
+
+    // We got file of different type - clearly there was a change
+    if (typeof nextFile !== typeof file) {
+      return true;
+    }
+
+    // We got an object and previously it was an object too - we need to compare deeply
+    if (isParamObject(nextFile) && isParamObject(file)) {
+      return (
+        nextFile.data !== file.data ||
+        nextFile.range !== file.range ||
+        nextFile.url !== file.url
+      );
+    // We either have or had an object - most likely there was a change
+    } else if (isParamObject(nextFile) || isParamObject(file)) {
+      return true;
+    }
+
+    /**
+     * The cases below are browser-only.
+     * If you're running on a non-browser environment, these cases will be of no use.
+     */
+    if (
+      isBrowser &&
+      // File is a Blob or a File
+      (isBlob(nextFile) || isFile(nextFile)) &&
+      (isBlob(file) || isFile(file))
+    ) {
+      /**
+       * Theoretically, we could compare files here by reading them, but that would severely affect
+       * performance. Therefore, we're making a compromise here, agreeing on not loading the next
+       * file if its size is identical as the previous one's.
+       */
+      return nextFile.size !== file.size;
+    }
+
+    return nextFile !== file;
+  }
+
+  loadDocument(props = this.props) {
+    cancelRunningTask(this.runningTask);
+
+    this.runningTask = makeCancellable(this.findDocumentSource(props.file));
+
+    return this.runningTask.promise
+      .then(this.onSourceSuccess)
+      .catch(this.onSourceError);
   }
 
   /**
-   * Finds a document source based on props.
+   * Attempts to find a document source based on props.
    */
-  findDocumentSource = async () => {
-    const { file } = this.props;
-
+  findDocumentSource = (file = this.props.file) => new Promise((resolve, reject) => {
     if (!file) {
-      return null;
+      return resolve(null);
     }
 
     // File is a string
-    if (typeof file === 'string') {
+    if (isString(file)) {
       if (isDataURI(file)) {
         const fileUint8Array = dataURItoUint8Array(file);
-        return { data: fileUint8Array };
+        return resolve(fileUint8Array);
       }
 
       displayCORSWarning();
-      return { url: file };
+      return resolve(file);
     }
 
-    // File is PDFDataRangeTransport
-    if (file instanceof PDFDataRangeTransport) {
-      return { range: file };
-    }
-
-    // File is an ArrayBuffer
     if (isArrayBuffer(file)) {
-      return { data: file };
+      return resolve(file);
+    }
+
+    if (isParamObject(file)) {
+      // Prevent from modifying props
+      const modifiedFile = Object.assign({}, file);
+
+      if ('url' in modifiedFile) {
+        // File is data URI
+        if (isDataURI(modifiedFile.url)) {
+          const fileUint8Array = dataURItoUint8Array(modifiedFile.url);
+          return resolve(fileUint8Array);
+        }
+
+        displayCORSWarning();
+      }
+
+      return resolve(modifiedFile);
     }
 
     /**
@@ -265,32 +271,32 @@ export default class Document extends PureComponent {
     if (isBrowser) {
       // File is a Blob
       if (isBlob(file) || isFile(file)) {
-        return { data: await loadFromFile(file) };
+        const reader = new FileReader();
+
+        reader.onload = () => resolve(new Uint8Array(reader.result));
+        reader.onerror = (event) => {
+          switch (event.target.error.code) {
+            case event.target.error.NOT_FOUND_ERR:
+              return reject(new Error('Error while reading a file: File not found.'));
+            case event.target.error.NOT_READABLE_ERR:
+              return reject(new Error('Error while reading a file: File not readable.'));
+            case event.target.error.SECURITY_ERR:
+              return reject(new Error('Error while reading a file: Security error.'));
+            case event.target.error.ABORT_ERR:
+              return reject(new Error('Error while reading a file: Aborted.'));
+            default:
+              return reject(new Error('Error while reading a file.'));
+          }
+        };
+        reader.readAsArrayBuffer(file);
+
+        return null;
       }
     }
 
-    // At this point, file must be an object
-    if (typeof file !== 'object') {
-      throw new Error('Invalid parameter in file, need either Uint8Array, string or a parameter object');
-    }
-
-    if (!file.url && !file.data && !file.range) {
-      throw new Error('Invalid parameter object: need either .data, .range or .url');
-    }
-
-    // File .url is a string
-    if (typeof file.url === 'string') {
-      if (isDataURI(file.url)) {
-        const { url, ...otherParams } = file;
-        const fileUint8Array = dataURItoUint8Array(url);
-        return { data: fileUint8Array, ...otherParams };
-      }
-
-      displayCORSWarning();
-    }
-
-    return file;
-  };
+    // No supported loading method worked
+    return reject(new Error('Unsupported loading method.'));
+  })
 
   registerPage = (pageIndex, ref) => {
     this.pages[pageIndex] = ref;
@@ -300,55 +306,38 @@ export default class Document extends PureComponent {
     delete this.pages[pageIndex];
   }
 
-  renderChildren() {
-    const { children } = this.props;
-
+  renderNoData() {
     return (
-      <DocumentContext.Provider value={this.childContext}>
-        {children}
-      </DocumentContext.Provider>
+      <div className="react-pdf__message react-pdf__message--no-data">{this.props.noData}</div>
     );
   }
 
-  renderContent() {
-    const { file } = this.props;
-    const { pdf } = this.state;
+  renderError() {
+    return (
+      <div className="react-pdf__message react-pdf__message--error">{this.props.error}</div>
+    );
+  }
 
-    if (!file) {
-      const { noData } = this.props;
-
-      return (
-        <Message type="no-data">
-          {noData}
-        </Message>
-      );
-    }
-
-    if (pdf === null) {
-      const { loading } = this.props;
-
-      return (
-        <Message type="loading">
-          {loading}
-        </Message>
-      );
-    }
-
-    if (pdf === false) {
-      const { error } = this.props;
-
-      return (
-        <Message type="error">
-          {error}
-        </Message>
-      );
-    }
-
-    return this.renderChildren();
+  renderLoader() {
+    return (
+      <div className="react-pdf__message react-pdf__message--loading">{this.props.loading}</div>
+    );
   }
 
   render() {
-    const { className, inputRef } = this.props;
+    const { className, file, inputRef } = this.props;
+    const { pdf } = this.state;
+
+    let content;
+    if (!file) {
+      content = this.renderNoData();
+    } else if (pdf === null) {
+      content = this.renderLoader();
+    } else if (pdf === false) {
+      content = this.renderError();
+    } else {
+      content = this.props.children;
+    }
 
     return (
       <div
@@ -356,33 +345,24 @@ export default class Document extends PureComponent {
         ref={inputRef}
         {...this.eventProps}
       >
-        {this.renderContent()}
+        {content}
       </div>
     );
   }
 }
 
+Document.childContextTypes = {
+  linkService: isLinkService,
+  pdf: isPdf,
+  registerPage: PropTypes.func,
+  rotate: PropTypes.number,
+  unregisterPage: PropTypes.func,
+};
+
 Document.defaultProps = {
   error: 'Failed to load PDF file.',
   loading: 'Loading PDF…',
   noData: 'No PDF file specified.',
-  onPassword: (callback, reason) => {
-    switch (reason) {
-      case PasswordResponses.NEED_PASSWORD: {
-        // eslint-disable-next-line no-alert
-        const password = prompt('Enter the password to open this PDF file.');
-        callback(password);
-        break;
-      }
-      case PasswordResponses.INCORRECT_PASSWORD: {
-        // eslint-disable-next-line no-alert
-        const password = prompt('Invalid password. Please try again.');
-        callback(password);
-        break;
-      }
-      default:
-    }
-  },
 };
 
 Document.propTypes = {
@@ -395,9 +375,7 @@ Document.propTypes = {
   noData: PropTypes.node,
   onItemClick: PropTypes.func,
   onLoadError: PropTypes.func,
-  onLoadProgress: PropTypes.func,
   onLoadSuccess: PropTypes.func,
-  onPassword: PropTypes.func,
   onSourceError: PropTypes.func,
   onSourceSuccess: PropTypes.func,
   rotate: PropTypes.number,

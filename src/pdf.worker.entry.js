@@ -7,4 +7,5 @@
  * See: https://github.com/parcel-bundler/parcel/issues/670
  */
 
-(typeof window !== 'undefined' ? window : {}).pdfjsWorker = require('pdfjs-dist/build/pdf.worker.js');
+(typeof window !== 'undefined' ? window : {}).pdfjsDistBuildPdfWorker =
+  require('pdfjs-dist/build/pdf.worker.js');

@@ -1,7 +1,8 @@
 import React from 'react';
 import { mount } from 'enzyme';
 
-import { PageCanvasInternal as PageCanvas } from '../PageCanvas';
+import {} from '../../entry.noworker';
+import PageCanvas from '../PageCanvas';
 
 import failingPage from '../../../__mocks__/_failing_page';
 
@@ -19,10 +20,13 @@ describe('PageCanvas', () => {
       muteConsole();
 
       mount(
-        <PageCanvas
-          onRenderError={onRenderError}
-          page={failingPage}
-        />
+        <PageCanvas />,
+        {
+          context: {
+            onRenderError,
+            page: failingPage,
+          }
+        }
       );
 
       expect.assertions(1);

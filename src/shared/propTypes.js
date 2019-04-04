@@ -1,15 +1,15 @@
 import PropTypes from 'prop-types';
 import once from 'lodash.once';
-import { mouseEvents, touchEvents, keyboardEvents } from 'make-event-props';
 
 import { isDefined } from './utils';
+import { mouseEvents, touchEvents } from './events';
 
 import LinkService from '../LinkService';
 
 export const eventsProps = once(() => {
   const eventProps = {};
 
-  [...mouseEvents, ...touchEvents, ...keyboardEvents].forEach((eventName) => {
+  [].concat(mouseEvents, touchEvents).forEach((eventName) => {
     eventProps[eventName] = PropTypes.func;
   });
 
@@ -43,23 +43,22 @@ export const isFile = PropTypes.oneOfType(fileTypes);
 
 export const isLinkService = PropTypes.instanceOf(LinkService);
 
-export const isLinkTarget = PropTypes.oneOf(['_self', '_blank', '_parent', '_top']);
-
 export const isPage = PropTypes.shape({
-  _transport: PropTypes.shape({
-    fontLoader: PropTypes.object.isRequired,
-  }).isRequired,
   commonObjs: PropTypes.shape({
-    _objs: PropTypes.object.isRequired,
+    objs: PropTypes.object.isRequired,
   }).isRequired,
   getAnnotations: PropTypes.func.isRequired,
   getTextContent: PropTypes.func.isRequired,
   getViewport: PropTypes.func.isRequired,
   render: PropTypes.func.isRequired,
+  transport: PropTypes.shape({
+    fontLoader: PropTypes.object.isRequired,
+  }).isRequired,
 });
 
 export const isPageIndex = (props, propName, componentName) => {
-  const { [propName]: pageIndex, pageNumber, pdf } = props;
+  const pageIndex = props[propName];
+  const { pageNumber, pdf } = props;
 
   if (!isDefined(pdf)) {
     return null;
@@ -74,7 +73,7 @@ export const isPageIndex = (props, propName, componentName) => {
       return new Error(`Expected \`${propName}\` to be greater or equal to 0.`);
     }
 
-    const { numPages } = pdf;
+    const { numPages } = pdf.pdfInfo;
 
     if (pageIndex + 1 > numPages) {
       return new Error(`Expected \`${propName}\` to be less or equal to ${numPages - 1}.`);
@@ -88,7 +87,8 @@ export const isPageIndex = (props, propName, componentName) => {
 };
 
 export const isPageNumber = (props, propName, componentName) => {
-  const { [propName]: pageNumber, pageIndex, pdf } = props;
+  const pageNumber = props[propName];
+  const { pageIndex, pdf } = props;
 
   if (!isDefined(pdf)) {
     return null;
@@ -103,7 +103,7 @@ export const isPageNumber = (props, propName, componentName) => {
       return new Error(`Expected \`${propName}\` to be greater or equal to 1.`);
     }
 
-    const { numPages } = pdf;
+    const { numPages } = pdf.pdfInfo;
 
     if (pageNumber > numPages) {
       return new Error(`Expected \`${propName}\` to be less or equal to ${numPages}.`);
@@ -125,7 +125,5 @@ export const isPdf = PropTypes.oneOfType([
   }),
   PropTypes.bool,
 ]);
-
-export const isRenderMode = PropTypes.oneOf(['canvas', 'none', 'svg']);
 
 export const isRotate = PropTypes.oneOf([0, 90, 180, 270]);

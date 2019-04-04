@@ -1,22 +1,22 @@
 import React from 'react';
 import { shallow } from 'enzyme';
+import pdfjs from 'pdfjs-dist';
 
-import { pdfjs } from '../../entry.jest';
-
-import { TextLayerItemInternal as TextLayerItem } from '../TextLayerItem';
+import {} from '../../entry.noworker';
+import TextLayerItem from '../TextLayerItem';
 
 import { loadPDF } from '../../__tests__/utils';
 
-const pdfFile = loadPDF('./__mocks__/_pdf.pdf');
+const { PDFJS } = pdfjs;
 
-/* eslint-disable comma-dangle */
+const { arrayBuffer: fileArrayBuffer } = loadPDF('./__mocks__/_pdf.pdf');
 
 describe('TextLayerItem', () => {
   // Loaded page
   let page;
 
   beforeAll(async () => {
-    const pdf = await pdfjs.getDocument({ data: pdfFile.arrayBuffer }).promise;
+    const pdf = await PDFJS.getDocument({ data: fileArrayBuffer });
 
     page = await pdf.getPage(1);
   });
@@ -36,9 +36,13 @@ describe('TextLayerItem', () => {
       const component = shallow(
         <TextLayerItem
           {...defaultProps}
-          page={page}
           str={str}
-        />
+        />,
+        {
+          context: {
+            page,
+          },
+        },
       );
 
       const textItem = component.text();
@@ -53,14 +57,18 @@ describe('TextLayerItem', () => {
       shallow(
         <TextLayerItem
           {...defaultProps}
-          customTextRenderer={customTextRenderer}
           itemIndex={itemIndex}
-          page={page}
           str={str}
-        />
+        />,
+        {
+          context: {
+            page,
+            customTextRenderer,
+          },
+        },
       );
 
-      expect(customTextRenderer).toHaveBeenCalledWith(
+      expect(customTextRenderer).toBeCalledWith(
         expect.objectContaining({
           str,
           itemIndex,
@@ -74,9 +82,13 @@ describe('TextLayerItem', () => {
       const component = shallow(
         <TextLayerItem
           {...defaultProps}
-          customTextRenderer={customTextRenderer}
-          page={page}
-        />
+        />,
+        {
+          context: {
+            page,
+            customTextRenderer,
+          },
+        },
       );
 
       const textItem = component.text();

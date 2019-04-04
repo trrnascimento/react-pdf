@@ -74,6 +74,9 @@ export const isFile = (variable) => {
  */
 export const isDataURI = str => isString(str) && /^data:/.test(str);
 
+export const isParamObject = file =>
+  file instanceof Object && ('data' in file || 'range' in file || 'url' in file);
+
 export const dataURItoUint8Array = (dataURI) => {
   if (!isDataURI(dataURI)) {
     throw new Error('dataURItoUint8Array was provided with an argument which is not a valid data URI.');
@@ -120,6 +123,7 @@ export const errorOnDev = (...message) => consoleOnDev('error', ...message);
 
 export const displayCORSWarning = () => {
   if (isLocalFileSystem) {
+    // eslint-disable-next-line no-console
     warnOnDev('Loading PDF as base64 strings/URLs might not work on protocols other than HTTP/HTTPS. On Google Chrome, you can use --allow-file-access-from-files flag for debugging purposes.');
   }
 };
@@ -166,31 +170,3 @@ export const makePageCallback = (page, scale) => {
   Object.defineProperty(page, 'originalHeight', { get() { return this.view[3]; }, configurable: true });
   return page;
 };
-
-export const isCancelException = error => (
-  error.name === 'RenderingCancelledException'
-  || error.name === 'PromiseCancelledException'
-);
-
-export const loadFromFile = file => new Promise((resolve, reject) => {
-  const reader = new FileReader();
-
-  reader.onload = () => resolve(new Uint8Array(reader.result));
-  reader.onerror = (event) => {
-    switch (event.target.error.code) {
-      case event.target.error.NOT_FOUND_ERR:
-        return reject(new Error('Error while reading a file: File not found.'));
-      case event.target.error.NOT_READABLE_ERR:
-        return reject(new Error('Error while reading a file: File not readable.'));
-      case event.target.error.SECURITY_ERR:
-        return reject(new Error('Error while reading a file: Security error.'));
-      case event.target.error.ABORT_ERR:
-        return reject(new Error('Error while reading a file: Aborted.'));
-      default:
-        return reject(new Error('Error while reading a file.'));
-    }
-  };
-  reader.readAsArrayBuffer(file);
-
-  return null;
-});

@@ -1,11 +1,12 @@
 import React, { PureComponent } from 'react';
 import PropTypes from 'prop-types';
 
-import PageContext from '../PageContext';
-
 import { isPage, isRotate } from '../shared/propTypes';
 
-export class TextLayerItemInternal extends PureComponent {
+// Render disproportion above which font will be considered broken and fallback will be used
+const BROKEN_FONT_ALARM_THRESHOLD = 0.1;
+
+export default class TextLayerItem extends PureComponent {
   componentDidMount() {
     this.alignTextItem();
   }
@@ -15,9 +16,9 @@ export class TextLayerItemInternal extends PureComponent {
   }
 
   get unrotatedViewport() {
-    const { page, scale } = this.props;
+    const { page, scale } = this.context;
 
-    return page.getViewport({ scale });
+    return page.getViewport(scale);
   }
 
   /**
@@ -25,7 +26,7 @@ export class TextLayerItemInternal extends PureComponent {
    * text content.
    */
   get rotate() {
-    const { page, rotate } = this.props;
+    const { page, rotate } = this.context;
     return rotate - page.rotate;
   }
 
@@ -62,43 +63,42 @@ export class TextLayerItemInternal extends PureComponent {
     return defaultSideways ? y - xMin : x - xMin;
   }
 
-  async getFontData(fontName) {
-    const { page } = this.props;
+  async getFontData(fontFamily) {
+    const { page } = this.context;
 
-    const font = await new Promise((resolve) => {
-      page.commonObjs.get(fontName, resolve);
-    });
+    const font = await page.commonObjs.ensureObj(fontFamily);
 
-    return font;
+    return font.data;
   }
 
   async alignTextItem() {
-    const element = this.item;
-
-    if (!element) {
+    if (!this.item) {
       return;
     }
 
+    const element = this.item;
     element.style.transform = '';
 
-    const { fontName, scale, width } = this.props;
+    const { scale } = this.context;
+    const { fontName, width } = this.props;
+    const targetWidth = width * scale;
 
     const fontData = await this.getFontData(fontName);
 
-    const fallbackFontName = fontData ? fontData.fallbackName : 'sans-serif';
-    element.style.fontFamily = `${fontName}, ${fallbackFontName}`;
+    let actualWidth = this.getElementWidth(element);
+    const widthDisproportion = Math.abs((targetWidth / actualWidth) - 1);
 
-    const targetWidth = width * scale;
-    const actualWidth = this.getElementWidth(element);
+    const repairsNeeded = widthDisproportion > BROKEN_FONT_ALARM_THRESHOLD;
+    if (repairsNeeded) {
+      const fallbackFontName = fontData ? fontData.fallbackName : 'sans-serif';
+      element.style.fontFamily = fallbackFontName;
 
-    let transform = `scaleX(${targetWidth / actualWidth})`;
-
-    const ascent = fontData ? fontData.ascent : 0;
-    if (ascent) {
-      transform += ` translateY(${(1 - ascent) * 100}%)`;
+      actualWidth = this.getElementWidth(element);
     }
 
-    element.style.transform = transform;
+    const ascent = fontData ? fontData.ascent : 1;
+
+    element.style.transform = `scaleX(${targetWidth / actualWidth}) translateY(${(1 - ascent) * 100}%)`;
   }
 
   getElementWidth = (element) => {
@@ -108,13 +108,14 @@ export class TextLayerItemInternal extends PureComponent {
 
   render() {
     const { fontSize, top, left } = this;
-    const { customTextRenderer, scale, str: text } = this.props;
+    const { scale } = this.context;
+    const { fontName, str: text } = this.props;
 
     return (
-      <span
+      <div
         style={{
           height: '1em',
-          fontFamily: 'sans-serif',
+          fontFamily: fontName,
           fontSize: `${fontSize * scale}px`,
           position: 'absolute',
           top: `${top * scale}px`,
@@ -126,31 +127,26 @@ export class TextLayerItemInternal extends PureComponent {
         ref={(ref) => { this.item = ref; }}
       >
         {
-          customTextRenderer
-            ? customTextRenderer(this.props)
-            : text
+          this.context.customTextRenderer ?
+            this.context.customTextRenderer(this.props) :
+            text
         }
-      </span>
+      </div>
     );
   }
 }
 
-TextLayerItemInternal.propTypes = {
+TextLayerItem.contextTypes = {
   customTextRenderer: PropTypes.func,
-  fontName: PropTypes.string.isRequired,
-  itemIndex: PropTypes.number.isRequired, // eslint-disable-line react/no-unused-prop-types
   page: isPage.isRequired,
   rotate: isRotate,
   scale: PropTypes.number,
+};
+
+TextLayerItem.propTypes = {
+  fontName: PropTypes.string.isRequired,
+  itemIndex: PropTypes.number.isRequired, // eslint-disable-line react/no-unused-prop-types
   str: PropTypes.string.isRequired,
   transform: PropTypes.arrayOf(PropTypes.number).isRequired,
   width: PropTypes.number.isRequired,
 };
-
-const TextLayerItem = props => (
-  <PageContext.Consumer>
-    {context => <TextLayerItemInternal {...context} {...props} />}
-  </PageContext.Consumer>
-);
-
-export default TextLayerItem;

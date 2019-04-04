@@ -1,17 +1,17 @@
 import React from 'react';
 import { shallow } from 'enzyme';
+import pdfjs from 'pdfjs-dist';
 
-import { pdfjs } from '../../entry.jest';
-
-import { TextLayerInternal as TextLayer } from '../TextLayer';
+import {} from '../../entry.noworker';
+import TextLayer from '../TextLayer';
 
 import failingPage from '../../../__mocks__/_failing_page';
 
-import {
-  loadPDF, makeAsyncCallback, muteConsole, restoreConsole,
-} from '../../__tests__/utils';
+import { loadPDF, makeAsyncCallback, muteConsole, restoreConsole } from '../../__tests__/utils';
 
-const pdfFile = loadPDF('./__mocks__/_pdf.pdf');
+const { PDFJS } = pdfjs;
+
+const { arrayBuffer: fileArrayBuffer } = loadPDF('./__mocks__/_pdf.pdf');
 
 /* eslint-disable comma-dangle */
 
@@ -25,7 +25,7 @@ describe('TextLayer', () => {
   let desiredTextItems2;
 
   beforeAll(async () => {
-    const pdf = await pdfjs.getDocument({ data: pdfFile.arrayBuffer }).promise;
+    const pdf = await PDFJS.getDocument({ data: fileArrayBuffer });
 
     page = await pdf.getPage(1);
     const textContent = await page.getTextContent();
@@ -41,10 +41,13 @@ describe('TextLayer', () => {
       const { func: onGetTextSuccess, promise: onGetTextSuccessPromise } = makeAsyncCallback();
 
       shallow(
-        <TextLayer
-          onGetTextSuccess={onGetTextSuccess}
-          page={page}
-        />
+        <TextLayer />,
+        {
+          context: {
+            onGetTextSuccess,
+            page,
+          },
+        },
       );
 
       expect.assertions(1);
@@ -57,10 +60,13 @@ describe('TextLayer', () => {
       muteConsole();
 
       shallow(
-        <TextLayer
-          onGetTextError={onGetTextError}
-          page={failingPage}
-        />
+        <TextLayer />,
+        {
+          context: {
+            onGetTextError,
+            page: failingPage,
+          },
+        },
       );
 
       expect.assertions(1);
@@ -73,10 +79,13 @@ describe('TextLayer', () => {
       const { func: onGetTextSuccess, promise: onGetTextSuccessPromise } = makeAsyncCallback();
 
       const mountedComponent = shallow(
-        <TextLayer
-          onGetTextSuccess={onGetTextSuccess}
-          page={page}
-        />
+        <TextLayer />,
+        {
+          context: {
+            onGetTextSuccess,
+            page,
+          },
+        },
       );
 
       expect.assertions(2);
@@ -84,18 +93,12 @@ describe('TextLayer', () => {
 
       const { func: onGetTextSuccess2, promise: onGetTextSuccessPromise2 } = makeAsyncCallback();
 
-      mountedComponent.setProps({
+      mountedComponent.setContext({
         onGetTextSuccess: onGetTextSuccess2,
         page: page2,
       });
 
       await expect(onGetTextSuccessPromise2).resolves.toMatchObject(desiredTextItems2);
-    });
-
-    it('throws an error when placed outside Page', () => {
-      muteConsole();
-      expect(() => shallow(<TextLayer />)).toThrow();
-      restoreConsole();
     });
   });
 
@@ -104,10 +107,13 @@ describe('TextLayer', () => {
       const { func: onGetTextSuccess, promise: onGetTextSuccessPromise } = makeAsyncCallback();
 
       const component = shallow(
-        <TextLayer
-          onGetTextSuccess={onGetTextSuccess}
-          page={page}
-        />
+        <TextLayer />,
+        {
+          context: {
+            onGetTextSuccess,
+            page,
+          },
+        },
       );
 
       expect.assertions(1);
@@ -124,11 +130,14 @@ describe('TextLayer', () => {
       const rotate = 90;
 
       const component = shallow(
-        <TextLayer
-          onGetTextSuccess={onGetTextSuccess}
-          page={page}
-          rotate={rotate}
-        />
+        <TextLayer />,
+        {
+          context: {
+            onGetTextSuccess,
+            page,
+            rotate,
+          },
+        },
       );
 
       expect.assertions(1);
@@ -145,11 +154,14 @@ describe('TextLayer', () => {
       const scale = 2;
 
       const component = shallow(
-        <TextLayer
-          onGetTextSuccess={onGetTextSuccess}
-          page={page}
-          scale={scale}
-        />
+        <TextLayer />,
+        {
+          context: {
+            onGetTextSuccess,
+            page,
+            scale,
+          },
+        },
       );
 
       expect.assertions(1);
